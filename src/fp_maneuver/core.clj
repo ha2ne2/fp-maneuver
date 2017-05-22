@@ -44,7 +44,7 @@
             :preset :size :fps :vcodec :vbps :acodec :abps
             :record? :aq-strength :ffmpeg-args])
 
-(def int-items #{:fps :vbps :abps :aq-strength})
+(def s-to-i? #{:fps :vbps :abps})
 
 (def text-field-items
   [:host :cname :genre :desc :comment :url :size :fps :vbps :abps])
@@ -75,7 +75,7 @@
     ))
 
 (defn my-get [key]
-  ((comp (if (int-items key) s-to-i identity)
+  ((comp (if (s-to-i? key) s-to-i identity)
          (condp get (super (forms key))
            #{javax.swing.JTextArea javax.swing.JTextField javax.swing.JComboBox} text
            #{javax.swing.JCheckBox javax.swing.JSpinner} selection))
@@ -334,12 +334,4 @@
   (-> main-window pack! show!))
 
 ;; (-main)
-
-;; (for
-;;     [n (range 1 101)
-;;      t [(mod n 3)]
-;;      z [{0"Fizz"}]]
-;;   ({0(str(z t)'Buzz)}(mod n 5)(z t n)))
-
-
 

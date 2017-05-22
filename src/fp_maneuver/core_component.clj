@@ -174,8 +174,3 @@
      (map (comp #(.getImage %) seesaw.icon/icon clojure.java.io/resource)
           ["16.png" "32.png" "48.png" "64.png" "128.png" "256.png" "512.png"]))))
 
-
-;コーヒーいい匂いがする
-
-
-

@@ -32,8 +32,8 @@
 
 (defn s-to-i [s]
   (try
-    (read-string s)
-    (catch Exception e 0)))
+    (Integer/parseInt s)
+    (catch java.lang.NumberFormatException e 0)))
 
 (defn url-encode [s]
   (some-> s str (URLEncoder/encode "UTF-8") (.replace "+" "%20")))
