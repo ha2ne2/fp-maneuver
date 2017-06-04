@@ -94,7 +94,7 @@
 
 (defn set-form-data [chinfo]
   (reduce-kv (fn [acc key val] (my-set key val) nil)
-             nil chinfo))
+             nil (force-array-map chinfo items)))
 
 (defn get-setting-form-data []
   (into {} (map #(vector %1 (text (setting-forms %1))) setting-items)))
