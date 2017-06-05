@@ -162,10 +162,23 @@
 
 (def settings (atom (read-settings)))
 
+(defn pulse-audio-devices []
+  (let [process (.exec (Runtime/getRuntime)
+                       "pactl list short sources")
+        input (BufferedReader.
+               (InputStreamReader. (.getInputStream process) "UTF-8"))]
+    (loop [[x & xs] (line-seq input)
+           acc []]
+      (if x
+        (if-let [result (re-find #"^\d+\s+(\S+)" x)]
+          (recur xs (conj acc (second result)))
+          (recur xs acc))
+        acc))))
+
 (defn get-devices []
   (if (and (= "" (text (setting-forms :ffmpeg-path))))
     (throw (Exception. "ffmpeg-pathを指定して下さい。"))
-    (do
+    (if windows?
       (let [process (.exec (Runtime/getRuntime)
                            (str (text (setting-forms :ffmpeg-path))
                                 " -list_devices true -f dshow -i dummy"))
@@ -182,7 +195,8 @@
               (recur xs acc (if (and (= type :video-device)
                                      (re-find #"DirectShow audio devices" x))
                               :audio-device type)))
-            acc))))))
+            acc)))
+      {:video-device ["x11grab"] :audio-device (pulse-audio-devices)})))
 
 ;(gen-command (get-form-data))
 
