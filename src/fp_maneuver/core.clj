@@ -328,16 +328,22 @@
                          (doto (dialog :type :info :content "先にffmpeg-pathを指定して下さい。")
                            (.setLocationRelativeTo main-window)
                            pack! show!)
-                         (let [listbox (listbox :model ((get-devices) type))]
-                           (.setSelectedIndex listbox 0)
-                           (doto (dialog :title (str type "の選択")
-                                         :type :question
-                                         :content listbox
-                                         :success-fn (fn [_] (text!
-                                                              (setting-forms type)
-                                                              (selection listbox))))
-                             (.setLocationRelativeTo main-window)
-                             pack! show!))))]))
+                         (try
+                           (let [listbox (listbox :model ((get-devices) type))]
+                             (.setSelectedIndex listbox 0)
+                             (doto (dialog :title (str type "の選択")
+                                           :type :question
+                                           :content listbox
+                                           :success-fn (fn [_] (text!
+                                                                (setting-forms type)
+                                                                (selection listbox))))
+                               (.setLocationRelativeTo main-window)
+                               pack! show!))
+                           ;; ffmpeg や pactl の実行に失敗した場合。
+                           (catch java.io.IOException e
+                             (doto (dialog :type :error :content (.getMessage e))
+                               (.setLocationRelativeTo main-window)
+                               pack! show!)))))]))
 
 (load "core_component")
 
