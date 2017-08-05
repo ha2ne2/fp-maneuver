@@ -1,4 +1,4 @@
-FPManeuver v1.2.0
+FPManeuver v1.2.1
 
 配信開始ボタン押すだけで配信を始められるツールです。
 ピアキャストからチャンネルを立てる必要がありません。
@@ -35,6 +35,9 @@ http://twitter.com/hatsunetsu7
 
 
 ■■■■ Release NOTE ■■■■
+
+v1.2.1 Release 2017/05/22
+・aq-strengthの値が常に0として扱われていたのを修正
 
 v1.2.0 Release 2017/05/17
 ・エンコ設定タブを付けて、FFmpegオプションを手動で変更できるようにした

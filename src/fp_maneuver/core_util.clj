@@ -9,6 +9,9 @@
 ;;       (println line)
 ;;       (recur rest))))
 
+;; (mapc print '(1 2 3 4)) ;=> 1234
+(defn mapc [f xs] (reduce #(f %2) nil xs) xs)
+
 ;;(super (forms :ffmpeg-args))
 ;;=> javax.swing.JTextArea
 (defn super [obj] (.getSuperclass (class obj)))

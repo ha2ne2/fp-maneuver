@@ -33,7 +33,7 @@
  history settings aq-strength-spinner
  scroll-chbox evaluated-args)
 
-(def software-name "FPManeuver v1.2.0")
+(def software-name "FPManeuver v1.2.1")
 
 (def windows? (starts-with? (System/getProperty "os.name") "Windows"))
 
@@ -77,8 +77,10 @@
 (defn my-get [key]
   ((comp (if (s-to-i? key) s-to-i identity)
          (condp get (super (forms key))
-           #{javax.swing.JTextArea javax.swing.JTextField javax.swing.JComboBox} text
-           #{javax.swing.JCheckBox javax.swing.JSpinner} selection))
+           #{javax.swing.JTextArea javax.swing.JTextField} text
+           #{javax.swing.JCheckBox javax.swing.JComboBox} selection
+           ;; JSpinner は+0.1とかすると誤差が出る
+           #{javax.swing.JSpinner} (comp (fn [n] (/ (int (* (+ 0.05 n) 10)) 10.0)) selection)))
    (forms key)))
 
 (defn get-form-data []
@@ -87,7 +89,7 @@
 (defn my-set [key val]
   ((condp get (super (forms key))
      #{javax.swing.JTextArea javax.swing.JTextField} text!
-     #{javax.swing.JCheckBox javax.swing.JSpinner javax.swing.JComboBox} selection!)
+     #{javax.swing.JCheckBox javax.swing.JComboBox javax.swing.JSpinner} selection!)
    (forms key)
    (if (and (= key :ffmpeg-args) (empty? val))
      ffmpeg-args val)))
@@ -286,12 +288,19 @@
             (reset! ffmpeg-writer
                     (BufferedWriter. (OutputStreamWriter. (.getOutputStream @ffmpeg-process) "UTF-8")))
             (future (loop [s (.readLine error)]
-                      (when s
+                      (if s
                         (do (invoke-later
                              (when (selection scroll-chbox)
                                (scroll! output-area :to :bottom)))
                             (.append output-area (str "\n" (format-ffmpeg-output s)))
-                            (recur (.readLine error))))))))))
+                            (recur (.readLine error)))
+                        (do
+                          (.beep (Toolkit/getDefaultToolkit))
+                          (doto (dialog :type :info :content "ffmpegが終了しました")
+                            (.setLocationRelativeTo main-window)
+                            pack! show!)
+                          (set-form-state true))
+                          )))))))
 
 (defn choose-button-gen
   ([target-form] (choose-button-gen target-form nil))
@@ -325,6 +334,11 @@
                              (.setLocationRelativeTo main-window)
                              pack! show!))))]))
 
+(defn eval-ffmpeg-args [_]
+  (text! evaluated-args
+         (try (gen-args (get-form-data) (my-get :ffmpeg-args))
+              (catch Exception e (str "SYNTAX ERROR:\n" e)))))
+
 (load "core_component")
 
 (defn -main [& args]
@@ -333,5 +347,10 @@
   (set-form-state true)
   (-> main-window pack! show!))
 
-;; (-main)
+;(-main)
+
+
+
+  
+
 

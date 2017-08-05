@@ -6,13 +6,7 @@
 
 (def ffmpeg-args-area
   (doto (text :multi-line? true :wrap-lines? true :rows 10
-              :listen  [:document
-                        (fn [e]
-                          (text! evaluated-args
-                                 (try (gen-args (get-form-data)
-                                                (my-get :ffmpeg-args))
-                                      (catch Exception e
-                                        (str "SYNTAX ERROR:\n" e)))))])
+              :listen  [:document eval-ffmpeg-args])
     (.setWrapStyleWord false)))
 
 (def setting-forms
@@ -55,7 +49,7 @@
 (def aq-strength-spinner
   (spinner
    :model
-   (spinner-model 1.0 :from 0.5 :to 1.5 :by 0.1)))
+   (spinner-model 1.0 :by 0.1)))
 
 (def forms
   (merge
@@ -141,14 +135,7 @@
            ["ffmpeg-args:"] [(scrollable (forms :ffmpeg-args))]
            ["evaluated:"] [(scrollable evaluated-args)]
            [""] [(horizontal-panel
-                  :items [(button :text "eval"
-                                  :listen [:action (fn [e]
-                                                     (text! evaluated-args
-                                                            (try (gen-args (get-form-data)
-                                                                           (my-get :ffmpeg-args))
-                                                                 (catch Exception e
-                                                                   (str "SYNTAX ERROR:\n" e)))))])
-                          (button :text "再読込"
+                  :items [(button :text "再読込"
                                   :listen [:action
                                            (fn [e]
                                              (my-set :ffmpeg-args
@@ -158,9 +145,7 @@
                                                        ffmpeg-args)))])
                           (button :text "初期化"
                                   :listen [:action
-                                           (fn [e]
-                                             (my-set :ffmpeg-args
-                                                     ffmpeg-args))])])]]))
+                                           (fn [e] (my-set :ffmpeg-args ffmpeg-args))])])]]))
 (def main-window
   (doto (frame :title software-name :on-close (if debug :hide :exit)
                :content (tabbed-panel
@@ -173,4 +158,21 @@
     (.setIconImages
      (map (comp #(.getImage %) seesaw.icon/icon clojure.java.io/resource)
           ["16.png" "32.png" "48.png" "64.png" "128.png" "256.png" "512.png"]))))
+
+
+;; 設定項目に変更があった時インタラクティブにeval
+
+(mapc #(listen (forms %) :document eval-ffmpeg-args)
+      (conj text-field-items :ffmpeg-args))
+
+(mapc #(listen (forms %) :action eval-ffmpeg-args)
+      (keys
+       (reduce (fn [acc x] (dissoc acc x))
+               forms
+               (conj text-field-items :ffmpeg-args :aq-strength))))
+
+(listen (forms :aq-strength) :change eval-ffmpeg-args)
+      
+;; (listen (forms :genre)
+;;         :action eval-ffmpeg-args)
 
