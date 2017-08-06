@@ -16,13 +16,14 @@
   (:require seesaw.mig
             seesaw.chooser
             clojure.pprint
-            [clojure.string :refer [starts-with? replace]]))
+            [clojure.string :refer [starts-with? replace]]
+            [environ.core :refer [env]]))
 
 (native!)
 
 (load "core_util")
 
-(def debug false)
+(def debug (env :dev))
 
 (declare 
  forms setting-forms history-cmbox
@@ -33,7 +34,11 @@
  history settings aq-strength-spinner
  scroll-chbox evaluated-args)
 
-(def software-name "FPManeuver v1.2.1")
+;; uberjarにするとpropertyが脱落するのでコンパイルタイムに定数化しておく
+(defmacro get-version []
+  (System/getProperty "fp-maneuver.version"))
+
+(def software-name (str "FPManeuver v" (get-version)))
 
 (def windows? (starts-with? (System/getProperty "os.name") "Windows"))
 
@@ -347,7 +352,8 @@
   (set-form-state true)
   (-> main-window pack! show!))
 
-;(-main)
+(when debug (-main))
+
 
 
 
