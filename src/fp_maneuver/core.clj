@@ -17,7 +17,9 @@
             seesaw.chooser
             clojure.pprint
             [clojure.string :refer [starts-with? replace]]
-            [environ.core :refer [env]]))
+            [environ.core :refer [env]]
+            [clojure.data.json :as json]
+            [clj-http.client :as client]))
 
 (native!)
 
@@ -26,7 +28,7 @@
 (def debug (env :dev))
 
 (declare 
- forms setting-forms history-cmbox
+ forms setting-forms history-cmbox yp-cmbox
  preset-cmbox vcodec-cmbox acodec-cmbox
  record-chbox output-area
  start-button stop-button button-panel
@@ -42,11 +44,18 @@
 
 (def windows? (starts-with? (System/getProperty "os.name") "Windows"))
 
+(def peca-version (atom nil))
+(def yellow-pages (atom nil))
+(def channel-id (atom nil))
 (def ffmpeg-process (atom nil))
 (def ffmpeg-writer (atom nil))
+(def localhost "http://localhost")
+(def http-push-server (atom nil))
+;; (+ (rand-int 16384) 49152)
+;; = 49152～65535
 
 (def items [:host :cname :genre :desc :comment :url
-            :preset :size :fps :vcodec :vbps :acodec :abps
+            :preset :size :fps :vcodec :vbps :acodec :abps :yp
             :record? :aq-strength :ffmpeg-args])
 
 (def s-to-i? #{:fps :vbps :abps})
@@ -113,7 +122,7 @@
   (config! stop-button :enabled? (not state)))
 
 (defn history-to-str-vec [history]
-  (map #(reduce str (interpose " " ((juxt :cname :genre :desc) %1))) history))
+  (reduce str (interpose " " ((juxt :cname :genre :desc) history))))
 
 (defn read-history []
   (try (let [s (slurp "history.clj")
@@ -123,13 +132,13 @@
            (read-string (str "[" s "]")))) ;; 後方互換性の為
        (catch Exception e
          [(force-array-map 
-           {:host "http://ha2ne2.tokyo:7144"
+           {:host "http://localhost:7144"
             :size "800x600"
-            :fps 20
+            :fps 30
             :preset "medium"
             :vcodec "H264/FLV (x264 20170123-90a61ec)"
             :vbps 500
-            :acodec "AAC (native 20170425-b4330a0)"
+            ;:acodec "AAC (native 20170425-b4330a0)"
             :abps 96
             :record? true
             :aq-strength 1.0}
@@ -138,7 +147,7 @@
 (defn write-history []
   (let [chinfo (get-form-data)
         chinfo (force-array-map 
-                (if (= (:ffmpeg-args chinfo) ffmpeg-args)
+                (when (= (chinfo :ffmpeg-args) ffmpeg-args)
                   (dissoc chinfo :ffmpeg-args) chinfo)
                 items)
         tmp ((juxt :cname :genre :desc) chinfo)
@@ -148,7 +157,7 @@
      (str (clojure.pprint/write new-history :stream nil) "\r\n\r\n"))
     (reset! history new-history)
     (.removeAllItems history-cmbox)
-    (dorun (map #(.addItem history-cmbox %1) (history-to-str-vec @history)))))
+    (dorun (map #(.addItem history-cmbox %1) (map history-to-str-vec @history)))))
 
 (def history (atom (read-history)))
 
@@ -214,14 +223,13 @@
                                      [~'fps ~'vbps ~'abps]) ;; 後方互換
           ~'screen-size ~(get-screen-size)
           {:keys [~'ffmpeg-path ~'video-device ~'audio-device]} @settings
-          ~'file-format (if (starts-with? ~'vcodec "H265/MKV")
+          ~'file-format (if (starts-with? ~'vcodec "H265")
                           "matroska" "flv")
-          ~'vcodec (if (starts-with? ~'vcodec "H265/MKV")
+          ~'vcodec (if (starts-with? ~'vcodec "H265")
                      "libx265 -x265-params"
                      "libx264 -x264-params")
-          ~'acodec (cond (starts-with? ~'acodec "Opus") "libopus"
-                         (starts-with? ~'acodec "AAC") "aac"
-                         :else "libmp3lame")
+          ~'acodec (if (starts-with? ~'vcodec "H265") "libopus"
+                       "aac")
           ~'vsync (if (< ~'fps 50) "passthrough" "-1")]
       (str ~@(interpolate ffmpeg-args)))))
 
@@ -232,7 +240,7 @@
   (let [[vbps abps] (if-map #(instance? java.lang.String %1) read-string
                             [vbps abps]) ;; 後方互換性 前はhistoryにstringとして保存していた
         [cname genre desc comment url] (map url-encode [cname genre desc comment url])
-        type (if (starts-with? vcodec "H265/MKV") "MKV" "FLV")
+        type (if (starts-with? vcodec "H265") "MKV" "FLV")
         bitrate (+ vbps abps)]
     (<< "~{host}/?name=~{cname}&genre=~{genre}&desc=~{desc}&comment=~{comment}"
         "&url=~{url}&type=~{type}&bitrate=~{bitrate}")))
@@ -242,9 +250,11 @@
         record-path (clojure.string/replace record-path #"\\" "/")
         date  (.format (SimpleDateFormat. "yyMMdd_HHmmss") (Date.))
         args  (gen-args chinfo (my-get :ffmpeg-args))
-        url   (gen-url chinfo)
-        type  (if (starts-with? vcodec "H265/MKV") "matroska" "flv")
-        ext   (if (starts-with? vcodec "H265/MKV") "mkv" "flv")
+        url   (if (= "ST" @peca-version)
+                @http-push-server
+                (gen-url chinfo))
+        type  (if (starts-with? vcodec "H265") "matroska" "flv")
+        ext   (if (starts-with? vcodec "H265") "mkv" "flv")
         shell (if windows? ["cmd" "/c"] ["/bin/sh" "-c"])
         genre (file-name-encode genre)
         desc  (file-name-encode desc)
@@ -254,6 +264,11 @@
             (<< "~{args} - | ~{ffmpeg-path} -i - -c copy -f ~{type} \"~{url}\" "
                 "-c copy -f ~{type} \"~{record-path}/~{date}_~{genre}_~{desc}.~{ext}\" -nostats")
             (<< "~{args} \"~{url}\"")))))
+
+(defn eval-ffmpeg-args [_]
+  (text! evaluated-args
+         (try (gen-args (get-form-data) (my-get :ffmpeg-args))
+              (catch Exception e (str "SYNTAX ERROR:\n" e)))))
 
 ;; (format-ffmpeg-output "frame= 7710 fps= 30 q=-0.0 q=29.0 size=    6236kB time=00:04:16.48 bitrate= 199.2kbits/s speed=0.998x")
 ;;=> "[00:04:16] 6.0MB 30fps 199.2kbps 0.998x"
@@ -267,102 +282,153 @@
               fps bitrate speed)) 
     line))
 
+;; プロセス実行サンプル
+;; (let [stream
+;;       (-> (ProcessBuilder. ["cmd" "/c" "dir"])
+;;           .start .getInputStream
+;;           InputStreamReader. BufferedReader.)]
+;;   (loop [[line & rest] (line-seq stream)]
+;;     (when line
+;;       (println line)
+;;       (recur rest))))
+
+(defn get-writer [process]
+  (BufferedWriter.
+   (OutputStreamWriter. (.getOutputStream process) "UTF-8")))
+
+(defn get-error-reader [process]
+  (BufferedReader.
+   (InputStreamReader. (.getErrorStream process) "UTF-8")))
+
+(defn show-dialog [message type]
+  (doto (dialog :type type :content message)
+    (.setLocationRelativeTo main-window)
+    pack! show!))
+
+(defn valid-form? []
+  (cond
+    ((some-fn (comp empty? @settings)) :ffmpeg-path :video-device :audio-device)
+    (do (show-dialog "未記入の設定があります。\n基本設定タブから設定をして下さい。" :info) false)
+
+    (and (selection record-chbox) (empty? (@settings :record-path)))
+    (do (show-dialog "録画をする場合は基本設定タブから録画パスを設定して下さい。" :info) false)
+
+    (empty? (my-get :cname))
+    (do (show-dialog "チャンネル名を設定して下さい。" :info) false)
+
+    :else true))
+
+(defn post [method params]
+  (client/post (str (my-get :host) "/api/1") ; hostが/で終わっていてもいなくても通る
+               {:body (json/write-str
+                       ((if params #(assoc %1 :params params) identity)
+                         {:jsonrpc "2.0"
+                          :id (rand-int 1000)
+                          :method method}))
+                :headers {"X-Requested-With" "XMLRequest"}
+                :content-type :json
+                :accept :json}))
+
+;; (get-yellow-pages) ;=> {"TP" 1119160141, "SP" 903724922}
+(defn get-yellow-pages []
+  (let [raw (post "getYellowPages" nil)
+        result ((json/read-str (raw :body)) "result")]
+    (reduce (fn [acc yp] (assoc acc (yp "name") (yp "yellowPageId")))
+          {"掲載しない" nil} result)))
+
+
+;; (get-peca-version) ;=> "ST" || "YT" || "Unknown host"
+(defn get-peca-version []
+  (try
+    (let [raw (post "getVersionInfo" nil)
+          result (((json/read-str (raw :body)) "result") "agentName")]
+      (if (starts-with? result "PeerCastStation")
+        "ST"
+        "YT"))
+    (catch clojure.lang.ExceptionInfo e
+       (if (= ((ex-data e) :reason-phrase) "Not Found")
+         "Unknown"
+         "YT"))
+    (catch Exception e "Unknown")))
+
+;; return: channelID
+(defn create-channel [chinfo]
+  (let [raw (post "broadcastChannel"
+                   {:yellowPageId (@yellow-pages (my-get :yp))
+                    :sourceUri @http-push-server
+                    :sourceStream "HTTP Push Source"
+                    :contentReader (if (starts-with? (chinfo :vcodec) "H265")
+                                     "Matroska (MKV or WebM)" "Flash Video (FLV)")
+                    :info (assoc
+                           (zipmap [:name :genre :desc :comment :url]
+                                   (gets chinfo [:cname :genre :desc :comment :url]))
+                           :bitrate (+ (my-get :vbps) (my-get :abps)))
+                    :track {} ;; <- ないと弾かれる
+                    })
+        result ((json/read-str (raw :body)) "result")]
+    result))
+
+;; STOP成功時: null, 失敗時: Channel not found || Invalid channelId
+(defn stop-channel [channel-id]
+  (let [raw (post "stopChannel" {:channelId channel-id})]
+    raw))
+
+;; ピアキャスと通信して、STならYP一覧を取得し、GUI更新。
+;; host欄に変更がある度インタラクティブにチェックするため
+;; チェックは別スレッドでやる。入力途中、例えばhttp://localhまで
+;; 打った時に発生する通信は失敗してタイムアウト待ちになるが、その結果は
+;; http://localhost:7144まで入力した時の結果が帰ってくるよりも
+;; あとに返ってくる場合がある。なので実行開始時刻で比較し適宜破棄。
+(def prev-start (atom (System/currentTimeMillis)))
+(defn update-host [_]
+  (when (not (empty? (my-get :host)))
+    (let [current-start (System/currentTimeMillis)]
+      (future
+        (let [pecav (get-peca-version)
+              curr-yp (case pecav
+                        "ST" (get-yellow-pages)
+                        "YT" {"既定(YT)" 1}
+                        "Unknown" {"Unknown host" -1})]
+          (when (> current-start @prev-start)
+            (reset! prev-start current-start)
+            (when (not= curr-yp @yellow-pages)
+              (when (not= (keys curr-yp) (keys @yellow-pages))
+                (invoke-later
+                 (.removeAllItems yp-cmbox)
+                 (mapc #(.addItem yp-cmbox %)
+                       (sort (keys curr-yp)))))
+              (reset! yellow-pages curr-yp)
+              (reset! peca-version pecav))))))))
+
 (defn start-broadcast [_]
   (reset! settings (get-setting-form-data))
-  (cond ((some-fn (comp empty? @settings)) :ffmpeg-path :video-device :audio-device)
-        (doto (dialog :type :info :content "未記入の設定があります。\n基本設定タブから設定をして下さい。")
-          (.setLocationRelativeTo main-window)
-          pack! show!)
-
-        (and (selection record-chbox) (empty? (@settings :record-path)))
-        (doto (dialog :type :info :content "録画をする場合は基本設定タブから録画パスを設定して下さい。")
-          (.setLocationRelativeTo main-window)
-          pack! show!)
-
-        (empty? (my-get :cname))
-        (doto (dialog :type :info :content "チャンネル名を設定して下さい。")
-          (.setLocationRelativeTo main-window)
-          pack! show!)
-
-        :else
-        (let [command (gen-command (get-form-data))]
-          (invoke-later
-           (.append output-area (str "> " (reduce str command) "\n\n"))
-           (scroll! output-area :to :bottom))
-          (write-history)
-          (write-settings @settings)
-          (set-form-state false)
-
-          ;; (let [stream
-          ;;       (-> (ProcessBuilder. ["cmd" "/c" "dir"])
-          ;;           .start .getInputStream
-          ;;           InputStreamReader. BufferedReader.)]
-          ;;   (loop [[line & rest] (line-seq stream)]
-          ;;     (when line
-          ;;       (println line)
-          ;;       (recur rest))))
-
-          (reset! ffmpeg-process (.start (ProcessBuilder. command)))
-          (let [error (BufferedReader. (InputStreamReader. (.getErrorStream @ffmpeg-process) "UTF-8"))]
-            (reset! ffmpeg-writer
-                    (BufferedWriter. (OutputStreamWriter. (.getOutputStream @ffmpeg-process) "UTF-8")))
-            (future (loop [s (.readLine error)]
-                      (if s
-                        (do (invoke-later
-                             (when (selection scroll-chbox)
-                               (scroll! output-area :to :bottom)))
-                            (.append output-area (str "\n" (format-ffmpeg-output s)))
-                            (recur (.readLine error)))
-                        (do
-                          (.beep (Toolkit/getDefaultToolkit))
-                          (doto (dialog :type :info :content "ffmpegが終了しました")
-                            (.setLocationRelativeTo main-window)
-                            pack! show!)
-                          (set-form-state true))
-                          )))))))
-
-(defn choose-button-gen
-  ([target-form] (choose-button-gen target-form nil))
-  ([target-form dir?]
-   (button :text "..."
-           :listen [:action
-                    (fn [e]
-                      (->> ((if dir? choose-directory choose-file)
-                            setting-panel)
-                           (.getAbsolutePath)
-                           (text! target-form))
-                      )])))
-
-(defn device-choose-button-gen [type]
-    (button :text "..."
-            :listen [:action
-                     (fn [e]
-                       (reset! settings (get-setting-form-data))
-                       (if (= "" (text (setting-forms :ffmpeg-path)))
-                         (doto (dialog :type :info :content "先にffmpeg-pathを指定して下さい。")
-                           (.setLocationRelativeTo main-window)
-                           pack! show!)
-                         (try
-                           (let [listbox (listbox :model ((get-devices) type))]
-                             (.setSelectedIndex listbox 0)
-                             (doto (dialog :title (str type "の選択")
-                                           :type :question
-                                           :content listbox
-                                           :success-fn (fn [_] (text!
-                                                                (setting-forms type)
-                                                                (selection listbox))))
-                               (.setLocationRelativeTo main-window)
-                               pack! show!))
-                           ;; ffmpeg や pactl の実行に失敗した場合。
-                           (catch java.io.IOException e
-                             (doto (dialog :type :error :content (.getMessage e))
-                               (.setLocationRelativeTo main-window)
-                               pack! show!)))))]))
-
-(defn eval-ffmpeg-args [_]
-  (text! evaluated-args
-         (try (gen-args (get-form-data) (my-get :ffmpeg-args))
-              (catch Exception e (str "SYNTAX ERROR:\n" e)))))
+  (when (valid-form?)
+    (reset! http-push-server (str localhost ":" (+ (rand-int 16384) 49152)))
+    (let [command (gen-command (get-form-data))]
+      (invoke-later
+       (.append output-area (str "> " (reduce str command) "\n\n"))
+       (scroll! output-area :to :bottom))
+      (write-history)
+      (write-settings @settings)
+      (set-form-state false)
+      (when (= @peca-version "ST")
+        (reset! channel-id (create-channel (get-form-data))))
+      (reset! ffmpeg-process (.start (ProcessBuilder. command)))
+      (reset! ffmpeg-writer (get-writer @ffmpeg-process))
+      (let [error (get-error-reader @ffmpeg-process)]
+        (future
+          (loop [s (.readLine error)]
+            (if s
+              (do (invoke-later
+                   (when (selection scroll-chbox)
+                     (scroll! output-area :to :bottom))
+                   (.append output-area (str "\n" (format-ffmpeg-output s))))
+                  (recur (.readLine error)))
+              (do
+                (.beep (Toolkit/getDefaultToolkit))
+                (show-dialog "ffmpegが終了しました" :info)
+                (set-form-state true))
+              )))))))
 
 (load "core_component")
 
@@ -373,10 +439,4 @@
   (-> main-window pack! show!))
 
 (when debug (-main))
-
-
-
-
-  
-
 

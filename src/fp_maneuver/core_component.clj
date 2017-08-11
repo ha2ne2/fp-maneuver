@@ -1,5 +1,6 @@
 (in-ns 'fp-maneuver.core)
 
+
 (def evaluated-args 
   (doto (text :multi-line? true :wrap-lines? true :rows 10)
     (.setWrapStyleWord false)))
@@ -15,12 +16,15 @@
              setting-items)))
 
 (def history-cmbox
-  (combobox :model (history-to-str-vec @history)
+  (combobox :model (map history-to-str-vec @history)
             :listen 
             [:selection
              (fn [e]
                (if (not= -1 (.getSelectedIndex history-cmbox))
                  (set-form-data (@history (.getSelectedIndex history-cmbox)))))]))
+
+(def yp-cmbox 
+  (combobox :model [""]))
 
 (def preset-cmbox 
   (combobox :model
@@ -36,8 +40,8 @@
              "placebo"]))
 
 (def vcodec-cmbox 
-  (combobox :model ["H265/MKV (x265 2.4)"
-                    "H264/FLV (x264 20170123-90a61ec)"]))
+  (combobox :model ["H265+Opus/MKV"
+                    "H264+AAC/FLV"]))
 
 (def acodec-cmbox 
   (combobox :model ["Opus (Opus 1.1.4)"
@@ -57,6 +61,7 @@
    {:vcodec vcodec-cmbox
     :acodec acodec-cmbox
     :record? record-chbox
+    :yp yp-cmbox
     :preset preset-cmbox
     :aq-strength aq-strength-spinner
     :ffmpeg-args ffmpeg-args-area
@@ -79,9 +84,49 @@
 (def stop-button
   (button :text "配信終了"
           :listen [:action (fn [e]
+                             (when (= @peca-version "ST")
+                               (stop-channel @channel-id))
                              (set-form-state true)
                              (.write @ffmpeg-writer "q")
                              (.flush @ffmpeg-writer))]))
+
+(defn choose-button-gen
+  ([target-form] (choose-button-gen target-form nil))
+  ([target-form dir?]
+   (button :text "..."
+           :listen [:action
+                    (fn [e]
+                      (->> ((if dir? choose-directory choose-file)
+                            setting-panel)
+                           (.getAbsolutePath)
+                           (text! target-form))
+                      )])))
+
+(defn device-choose-button-gen [type]
+    (button :text "..."
+            :listen [:action
+                     (fn [e]
+                       (reset! settings (get-setting-form-data))
+                       (if (= "" (text (setting-forms :ffmpeg-path)))
+                         (doto (dialog :type :info :content "先にffmpeg-pathを指定して下さい。")
+                           (.setLocationRelativeTo main-window)
+                           pack! show!)
+                         (try
+                           (let [listbox (listbox :model ((get-devices) type))]
+                             (.setSelectedIndex listbox 0)
+                             (doto (dialog :title (str type "の選択")
+                                           :type :question
+                                           :content listbox
+                                           :success-fn (fn [_] (text!
+                                                                (setting-forms type)
+                                                                (selection listbox))))
+                               (.setLocationRelativeTo main-window)
+                               pack! show!))
+                           ;; ffmpeg や pactl の実行に失敗した場合。
+                           (catch java.io.IOException e
+                             (doto (dialog :type :error :content (.getMessage e))
+                               (.setLocationRelativeTo main-window)
+                               pack! show!)))))]))
 
 (def button-panel
   (horizontal-panel :items [start-button stop-button scroll-chbox]))
@@ -95,6 +140,7 @@
                   "[shrink 0]5px[]"]
     :items [["履歴:"] [history-cmbox]
             ["peercast host:"] [(forms :host)]
+            ["掲載YP:" ]       [(forms :yp)]
             ["チャンネル名:" ] [(forms :cname)]
             ["ジャンル:"]      [(forms :genre)]
             ["詳細:"]          [(forms :desc)]
@@ -102,10 +148,10 @@
             ["コンタクトURL:"] [(forms :url)]
             ["解像度:"]        [(forms :size)]
             ["FPS:"]           [(forms :fps)]
-            ["プリセット:"]        [preset-cmbox]
-            ["video codec:" ] [vcodec-cmbox]
+            ["codec:" ]        [vcodec-cmbox]
+            ["プリセット:"]    [preset-cmbox]
             ["video bitrate(kbps):" ] [(forms :vbps)]
-            ["audio codec:" ] [acodec-cmbox]
+            ;; ["audio codec:" ] [acodec-cmbox]
             ["audio bitrate(kbps):"]  [(forms :abps)]
             ["録画しますか？:"  ]     [record-chbox]
             [""] [button-panel]])
@@ -172,7 +218,6 @@
                (conj text-field-items :ffmpeg-args :aq-strength))))
 
 (listen (forms :aq-strength) :change eval-ffmpeg-args)
-      
-;; (listen (forms :genre)
-;;         :action eval-ffmpeg-args)
+
+(listen (forms :host) :document update-host)
 

@@ -9,8 +9,16 @@
 ;;       (println line)
 ;;       (recur rest))))
 
-;; (mapc print '(1 2 3 4)) ;=> 1234
-(defn mapc [f xs] (reduce #(f %2) nil xs) xs)
+(defn gets [m keys] (map #(m %) keys))
+
+
+;; (mapc print '(1 2 3 4)) ;=> '(1 2 3 4)
+(defn mapc [f xs]
+  (loop [[x & xs] xs]
+    (when x
+      (f x)
+      (recur xs)))
+  xs)
 
 ;;(super (forms :ffmpeg-args))
 ;;=> javax.swing.JTextArea
