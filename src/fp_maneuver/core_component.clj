@@ -41,7 +41,9 @@
 
 (def vcodec-cmbox 
   (combobox :model ["H265+Opus/MKV"
-                    "H264+AAC/FLV"]))
+                    "H265+Opus/MKV (nvenc)"
+                    "H264+AAC/FLV"
+                    "H264+AAC/FLV (nvenc)"]))
 
 (def acodec-cmbox 
   (combobox :model ["Opus (Opus 1.1.4)"

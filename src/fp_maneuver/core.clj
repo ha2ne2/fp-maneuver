@@ -73,8 +73,12 @@
      "-f dshow -framerate ~{fps} -video_size ~{size} "
      "-i video=\"~{video-device}\":audio=\"~{audio-device}\" -flags +global_header "
      "-threads 0 -vsync ~{vsync} "
-     "-vcodec ~{vcodec} \"bitrate=~{vbps}:vbv-maxrate=~{vbps}:vbv-bufsize=~(* vbps 2):"
-     "min-keyint=~{fps}:keyint=~(* fps 10):aq-mode=2:aq-strength=~{aq-strength}\" "
+     "-vcodec ~{vcodec} "
+     "~(if nvenc? "
+     "(<< \"-b:v ~{vbps}k -maxrate ~{vbps}k\") "
+     "(<< \"bitrate=~{vbps}:vbv-maxrate=~{vbps}:vbv-bufsize=~(* vbps 2):min-keyint=~{fps}:keyint=~(* fps 10):aq-mode=2:aq-strength=~{aq-strength}\")) "
+     ;; \"bitrate=~{vbps}:vbv-maxrate=~{vbps}:vbv-bufsize=~(* vbps 2):"
+     ;; "min-keyint=~{fps}:keyint=~(* fps 10):aq-mode=2:aq-strength=~{aq-strength}\" "
      "-preset ~{preset} "
      "-acodec ~{acodec} -b:a ~{abps}k -f ~{file-format}")
     (str
@@ -87,6 +91,7 @@
      "-s ~{size} -preset ~{preset} "
      "-acodec ~{acodec} -b:a ~{abps}k -f ~{file-format}")
     ))
+
 
 (defn my-get [key]
   ((comp (if (s-to-i? key) s-to-i identity)
@@ -136,9 +141,10 @@
             :size "800x600"
             :fps 30
             :preset "medium"
-            :vcodec "H264/FLV (x264 20170123-90a61ec)"
+            :vcodec "H264+AAC/FLV"
             :vbps 500
             ;:acodec "AAC (native 20170425-b4330a0)"
+            :yp "TP"
             :abps 96
             :record? true
             :aq-strength 1.0}
@@ -147,8 +153,9 @@
 (defn write-history []
   (let [chinfo (get-form-data)
         chinfo (force-array-map 
-                (when (= (chinfo :ffmpeg-args) ffmpeg-args)
-                  (dissoc chinfo :ffmpeg-args) chinfo)
+                (if (= (chinfo :ffmpeg-args) ffmpeg-args)
+                  (dissoc chinfo :ffmpeg-args)
+                  chinfo)
                 items)
         tmp ((juxt :cname :genre :desc) chinfo)
         new-history (into [chinfo] (filter #(not= tmp ((juxt :cname :genre :desc) %1)) @history))]
@@ -218,20 +225,25 @@
 
 (defn gen-args [chinfo ffmpeg-args]
   (eval
-   `(let [{:keys [~'preset ~'fps ~'size ~'vcodec ~'vbps ~'acodec ~'abps ~'aq-strength]} ~chinfo
-          [~'fps ~'vbps ~'abps] (map #(if (instance? java.lang.String %1) (read-string %1) %1)
-                                     [~'fps ~'vbps ~'abps]) ;; 後方互換
-          ~'screen-size ~(get-screen-size)
-          {:keys [~'ffmpeg-path ~'video-device ~'audio-device]} @settings
-          ~'file-format (if (starts-with? ~'vcodec "H265")
-                          "matroska" "flv")
-          ~'vcodec (if (starts-with? ~'vcodec "H265")
-                     "libx265 -x265-params"
-                     "libx264 -x264-params")
-          ~'acodec (if (starts-with? ~'vcodec "H265") "libopus"
-                       "aac")
-          ~'vsync (if (< ~'fps 50) "passthrough" "-1")]
-      (str ~@(interpolate ffmpeg-args)))))
+   `(do
+      (use 'fp-maneuver.core)
+      (let [{:keys [~'preset ~'fps ~'size ~'vcodec ~'vbps ~'acodec ~'abps ~'aq-strength]} ~chinfo
+            [~'fps ~'vbps ~'abps] (map #(if (instance? java.lang.String %1) (read-string %1) %1)
+                                       [~'fps ~'vbps ~'abps]) ;; 後方互換
+            ~'screen-size ~(get-screen-size)
+            {:keys [~'ffmpeg-path ~'video-device ~'audio-device]} @settings
+            ~'file-format (if (starts-with? ~'vcodec "H265")
+                            "matroska" "flv")
+            ~'nvenc? (not= (last ~'vcodec) \V)
+            ~'vcodec (case ~'vcodec
+                       "H265+Opus/MKV"         "libx265 -x265-params"
+                       "H265+Opus/MKV (nvenc)" "hevc_nvenc"
+                       "H264+AAC/FLV"          "libx264 -x264-params"
+                       "H264+AAC/FLV (nvenc)"  "h264_nvenc")
+            ~'acodec (if (starts-with? ~'vcodec "H265") "libopus"
+                         "aac")
+            ~'vsync (if (< ~'fps 50) "passthrough" "-1")]
+        (str ~@(interpolate ffmpeg-args))))))
 
 ;; (gen-url (get-form-data))
 ;; ;=>"http://ha2ne2.tokyo:8144/?name=テストちゃんねる&genre=プログラミング
@@ -269,6 +281,7 @@
   (text! evaluated-args
          (try (gen-args (get-form-data) (my-get :ffmpeg-args))
               (catch Exception e (str "SYNTAX ERROR:\n" e)))))
+
 
 ;; (format-ffmpeg-output "frame= 7710 fps= 30 q=-0.0 q=29.0 size=    6236kB time=00:04:16.48 bitrate= 199.2kbits/s speed=0.998x")
 ;;=> "[00:04:16] 6.0MB 30fps 199.2kbps 0.998x"
@@ -308,7 +321,7 @@
 (defn valid-form? []
   (cond
     ((some-fn (comp empty? @settings)) :ffmpeg-path :video-device :audio-device)
-    (do (show-dialog "未記入の設定があります。\n基本設定タブから設定をして下さい。" :info) false)
+    (do (show-dialog "初回起動時は基本設定タブから\nビデオデバイスとオーディオデバイスを設定して下さい。" :info) false)
 
     (and (selection record-chbox) (empty? (@settings :record-path)))
     (do (show-dialog "録画をする場合は基本設定タブから録画パスを設定して下さい。" :info) false)
@@ -400,10 +413,12 @@
               (reset! yellow-pages curr-yp)
               (reset! peca-version pecav))))))))
 
+
 (defn start-broadcast [_]
   (reset! settings (get-setting-form-data))
   (when (valid-form?)
-    (reset! http-push-server (str localhost ":" (+ (rand-int 16384) 49152)))
+    (when (= @peca-version "ST")
+      (reset! http-push-server (str localhost ":" (+ (rand-int 16384) 49152))))
     (let [command (gen-command (get-form-data))]
       (invoke-later
        (.append output-area (str "> " (reduce str command) "\n\n"))
@@ -434,9 +449,8 @@
 
 (defn -main [& args]
   (.addShutdownHook (Runtime/getRuntime) (Thread. #(.destroy @ffmpeg-process)))
-  (if (< 0 (count @history)) (set-form-data (@history 0)))
   (set-form-state true)
+  (set-form-data (@history 0))
   (-> main-window pack! show!))
 
 (when debug (-main))
-
