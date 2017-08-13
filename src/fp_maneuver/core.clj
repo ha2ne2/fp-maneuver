@@ -235,13 +235,13 @@
             ~'file-format (if (starts-with? ~'vcodec "H265")
                             "matroska" "flv")
             ~'nvenc? (not= (last ~'vcodec) \V)
+            ~'acodec (if (starts-with? ~'vcodec "H265") "libopus"
+                         "aac")
             ~'vcodec (case ~'vcodec
                        "H265+Opus/MKV"         "libx265 -x265-params"
                        "H265+Opus/MKV (nvenc)" "hevc_nvenc"
                        "H264+AAC/FLV"          "libx264 -x264-params"
                        "H264+AAC/FLV (nvenc)"  "h264_nvenc")
-            ~'acodec (if (starts-with? ~'vcodec "H265") "libopus"
-                         "aac")
             ~'vsync (if (< ~'fps 50) "passthrough" "-1")]
         (str ~@(interpolate ffmpeg-args))))))
 

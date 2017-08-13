@@ -1,4 +1,4 @@
-(defproject fp-maneuver "1.3.1"
+(defproject fp-maneuver "1.3.1a"
   :description "FIXME: write description"
   :url "http://example.com/FIXME"
   :license {:name "Eclipse Public License"
