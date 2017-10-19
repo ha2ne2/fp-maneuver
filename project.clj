@@ -1,4 +1,4 @@
-(defproject fp-maneuver "1.3.1a"
+(defproject fp-maneuver "1.4.0"
   :description "FIXME: write description"
   :url "http://example.com/FIXME"
   :license {:name "Eclipse Public License"
@@ -11,5 +11,5 @@
   :plugins [[lein-environ "1.1.0"]]
   :main ^:skip-aot fp-maneuver.core
   :target-path "target/%s"
-  :profiles {:dev    {:env {:dev true}}
+  :profiles {:dev     {:env {:dev true}}
              :uberjar {:aot :all}})

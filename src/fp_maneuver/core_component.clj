@@ -80,17 +80,20 @@
                    (.setWrapStyleWord false)))
 
 (def start-button
-  (button :text "配信開始"
-          :listen [:action start-broadcast]))
+  (button
+   :text "配信開始"
+   :listen
+   [:action
+    (fn [e]
+      ;; ちょっと場当たり的。
+      (case (text start-button)
+        "配信開始" (start-broadcast)
+        "詳細変更" (do (set-channel-info @channel-id (get-form-data))
+                       (set-form-state false))))]))
 
 (def stop-button
   (button :text "配信終了"
-          :listen [:action (fn [e]
-                             (when (= @peca-version "ST")
-                               (stop-channel @channel-id))
-                             (set-form-state true)
-                             (.write @ffmpeg-writer "q")
-                             (.flush @ffmpeg-writer))]))
+          :listen [:action stop-broadcast]))
 
 (defn choose-button-gen
   ([target-form] (choose-button-gen target-form nil))
@@ -101,8 +104,7 @@
                       (->> ((if dir? choose-directory choose-file)
                             setting-panel)
                            (.getAbsolutePath)
-                           (text! target-form))
-                      )])))
+                           (text! target-form)))])))
 
 (defn device-choose-button-gen [type]
     (button :text "..."
@@ -208,11 +210,32 @@
           ["16.png" "32.png" "48.png" "64.png" "128.png" "256.png" "512.png"]))))
 
 
+
+;; 配信中にクリックで詳細を編集可能に。
+(mapc #(listen (forms %)
+               :mouse-clicked
+               (fn [e]
+                 (when (not (and (config start-button :enabled?)
+                                 (= (config start-button :text) "配信開始")))
+                   (config! (.getSource e) :enabled? true)
+                   (request-focus! (.getSource e))
+                   (config! start-button
+                            :text "詳細変更"
+                            :enabled? true))))
+      [:cname :genre :desc :comment :url])
+
+
+
+
 ;; 設定項目に変更があった時インタラクティブにeval
 
+;; [:host :cname :genre :desc :comment :url :size :fps :vbps :abps :ffmpeg-args]
+;; ドキュメント変更時に。
 (mapc #(listen (forms %) :document eval-ffmpeg-args)
       (conj text-field-items :ffmpeg-args))
 
+;; (:acodec :record? :yp :preset :vcodec)
+;; クリック時に。
 (mapc #(listen (forms %) :action eval-ffmpeg-args)
       (keys
        (reduce (fn [acc x] (dissoc acc x))

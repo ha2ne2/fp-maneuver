@@ -1,13 +1,13 @@
 # FPManeuver
 
-”zMŠJŽnƒ{ƒ^ƒ“‰Ÿ‚·‚¾‚¯‚Å”zM‚ðŽn‚ß‚ç‚ê‚éƒc[ƒ‹‚Å‚·B  
-ƒsƒAƒLƒƒƒXƒg‚©‚çƒ`ƒƒƒ“ƒlƒ‹‚ð—§‚Ä‚é•K—v‚ª‚ ‚è‚Ü‚¹‚ñB  
-—\’è’n‚³‚ñ‚ªŠJ”­‚µ‚Ä‚¢‚éPeerCast YT‚Ì‹@”\‚ðŽg‚Á‚Ä‚¢‚Ü‚·B  
-H265/MKV”zM‚É‚à‘Î‰žILinux‚Å‚à“®‚«‚Ü‚·  
+é…ä¿¡é–‹å§‹ãƒœã‚¿ãƒ³æŠ¼ã™ã ã‘ã§é…ä¿¡ã‚’å§‹ã‚ã‚‰ã‚Œã‚‹ãƒ„ãƒ¼ãƒ«ã§ã™ã€‚  
+ãƒ”ã‚¢ã‚­ãƒ£ã‚¹ãƒˆã‹ã‚‰ãƒãƒ£ãƒ³ãƒãƒ«ã‚’ç«‹ã¦ã‚‹å¿…è¦ãŒã‚ã‚Šã¾ã›ã‚“ã€‚  
+äºˆå®šåœ°ã•ã‚“ãŒé–‹ç™ºã—ã¦ã„ã‚‹PeerCast YTã®æ©Ÿèƒ½ã‚’ä½¿ã£ã¦ã„ã¾ã™ã€‚  
+H265/MKVé…ä¿¡ã«ã‚‚å¯¾å¿œï¼Linuxã§ã‚‚å‹•ãã¾ã™  
 
 http://ha2ne2.tokyo/fp-maneuver/
 
-## ƒrƒ‹ƒh•û–@
+## ãƒ“ãƒ«ãƒ‰æ–¹æ³•
 
     $ lein uberjar
 

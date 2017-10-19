@@ -1,5 +1,6 @@
 (in-ns 'fp-maneuver.core)
 
+;; ãƒ—ãƒ­ã‚»ã‚¹èµ·å‹•ã‚µãƒ³ãƒ—ãƒ«
 ;; (let [stream
 ;;       (-> (ProcessBuilder. ["cmd" "/c" "dir"])
 ;;           .start .getInputStream
@@ -9,8 +10,10 @@
 ;;       (println line)
 ;;       (recur rest))))
 
-(defn gets [m keys] (map #(m %) keys))
-
+;; (gets {:hoge "ã»ã’", :asdf "asdf"} [:hoge :asdf])
+;; ;=> ("ã»ã’" "asdf")
+(defn gets [m keys] (map m keys))
+;(def gets map)
 
 ;; (mapc print '(1 2 3 4)) ;=> '(1 2 3 4)
 (defn mapc [f xs]
@@ -24,7 +27,8 @@
 ;;=> javax.swing.JTextArea
 (defn super [obj] (.getSuperclass (class obj)))
 
-;; (empty-or "" "hoge")
+
+;; (empty-or "" "" "hoge")
 ;=> "hoge"
 (defmacro empty-or [head & rest]
   (if (empty? rest)
@@ -50,11 +54,11 @@
   (some-> s str (URLEncoder/encode "UTF-8") (.replace "+" "%20")))
 
 ;; (file-name-encode "hogehoge/:*?\"<>|hoge.mkv")
-;;=>"hogehoge^F–Hhƒ„bhoge.mkv"
+;;=>"hogehogeï¼ï¼šï¼Šï¼Ÿâ€ï¼œï¼ï½œhoge.mkv"
 (defn file-name-encode [s]
   (replace s #"[\/\:\*\?\"\<\>\|]"
            (zipmap (map str "/:*?\"<>|")
-                   (map str "^F–Hhƒ„b"))))
+                   (map str "ï¼ï¼šï¼Šï¼Ÿâ€ï¼œï¼ï½œ"))))
 
 (defn force-array-map [m keys]
   (apply array-map (flatten (map #(vector %1 (%1 m)) keys))))

@@ -16,6 +16,7 @@
   (:require seesaw.mig
             seesaw.chooser
             clojure.pprint
+            [clojure.xml :as xml]
             [clojure.string :refer [starts-with? replace]]
             [environ.core :refer [env]]
             [clojure.data.json :as json]
@@ -102,6 +103,7 @@
            #{javax.swing.JSpinner} (comp (fn [n] (/ (int (* (+ 0.05 n) 10)) 10.0)) selection)))
    (forms key)))
 
+; into {} map #() ってやつよく書くのでなんかutility関数作りたい。
 (defn get-form-data []
   (into {} (map #(vector %1 (my-get %1))) (keys forms)))
 
@@ -124,6 +126,8 @@
   (config! (concat [history-cmbox start-button evaluated-args]
                    (vals forms) (vals setting-forms))
            :enabled? state)
+   ;; ここにあるのちょっと変だけど妥協
+  (config! start-button :text "配信開始")
   (config! stop-button :enabled? (not state)))
 
 (defn history-to-str-vec [history]
@@ -331,9 +335,14 @@
 
     :else true))
 
+;; (post "hoge" "hoge2")
+;; (client/post "http://localhost:7144/api/1"
+;;  {:body "{\"jsonrpc\":\"2.0\",\"id\":254,\"method\":\"hoge\",\"params\":\"hoge2\"}",
+;;   :headers {"X-Requested-With" "XMLRequest"}, :content-type :json, :accept :json})
 (defn post [method params]
   (client/post (str (my-get :host) "/api/1") ; hostが/で終わっていてもいなくても通る
                {:body (json/write-str
+                       ;; paramsがある時は追加
                        ((if params #(assoc %1 :params params) identity)
                          {:jsonrpc "2.0"
                           :id (rand-int 1000)
@@ -342,7 +351,18 @@
                 :content-type :json
                 :accept :json}))
 
+;; (get-channel-id-from-viewxml (get-form-data))
+;; => "E71C9E8787887CC1F99E3F0C78272942"
+(defn get-channel-id-from-viewxml [chinfo]
+  (some (fn [tag] (when (= :channel (:tag tag))
+                    (let [[id & info] (gets (:attrs tag) [:id :name :genre :desc])]
+                      (when (= info (gets chinfo [:cname :genre :desc]))
+                        id))))
+        (xml-seq (xml/parse (str (:host chinfo) "/admin?cmd=viewxml")))))
+
+
 ;; (get-yellow-pages) ;=> {"TP" 1119160141, "SP" 903724922}
+;; 例外対策いるかなぁまぁいいか
 (defn get-yellow-pages []
   (let [raw (post "getYellowPages" nil)
         result ((json/read-str (raw :body)) "result")]
@@ -364,6 +384,7 @@
          "YT"))
     (catch Exception e "Unknown")))
 
+;; (create-channel (get-form-data))
 ;; return: channelID
 (defn create-channel [chinfo]
   (let [raw (post "broadcastChannel"
@@ -386,35 +407,58 @@
   (let [raw (post "stopChannel" {:channelId channel-id})]
     raw))
 
+(defn set-channel-info [channel-id chinfo]
+  (let [raw (post "setChannelInfo"
+                  {:channelId channel-id
+                   :info (zipmap [:name :genre :desc :comment :url]
+                                 (gets chinfo [:cname :genre :desc :comment :url]))
+                   :track {:url "" :name "" :creator "" :album "" :genre ""}
+                   })]
+    (println raw)))
+
+(def prev-start (atom (System/currentTimeMillis)))
+
 ;; ピアキャスと通信して、STならYP一覧を取得し、GUI更新。
 ;; host欄に変更がある度インタラクティブにチェックするため
 ;; チェックは別スレッドでやる。入力途中、例えばhttp://localhまで
 ;; 打った時に発生する通信は失敗してタイムアウト待ちになるが、その結果は
 ;; http://localhost:7144まで入力した時の結果が帰ってくるよりも
 ;; あとに返ってくる場合がある。なので実行開始時刻で比較し適宜破棄。
-(def prev-start (atom (System/currentTimeMillis)))
 (defn update-host [_]
   (when (not (empty? (my-get :host)))
     (let [current-start (System/currentTimeMillis)]
       (future
         (let [pecav (get-peca-version)
-              curr-yp (case pecav
-                        "ST" (get-yellow-pages)
-                        "YT" {"既定(YT)" 1}
-                        "Unknown" {"Unknown host" -1})]
+              yps (case pecav
+                    "ST" (get-yellow-pages)
+                    "YT" {"既定(YT)" 1}
+                    "Unknown" {"Unknown host" -1})]
+          ;; 実行開始時刻が最新の場合のみ反映
+          ;;（過去の実行結果が、遅れて到着した場合は無視する）
           (when (> current-start @prev-start)
             (reset! prev-start current-start)
-            (when (not= curr-yp @yellow-pages)
-              (when (not= (keys curr-yp) (keys @yellow-pages))
-                (invoke-later
-                 (.removeAllItems yp-cmbox)
-                 (mapc #(.addItem yp-cmbox %)
-                       (sort (keys curr-yp)))))
-              (reset! yellow-pages curr-yp)
+            (when (not= yps @yellow-pages)
+              (invoke-later
+               (.removeAllItems yp-cmbox)
+               (mapc #(.addItem yp-cmbox %) (sort (keys yps))))
+              (reset! yellow-pages yps))
+            (when (not= pecav @peca-version)
               (reset! peca-version pecav))))))))
 
+(defn launch-ffmpeg-reader [reader]
+  (future
+    (loop [[line & rest] (line-seq reader)]
+      (when line
+        (invoke-later
+         (when (selection scroll-chbox)
+           (scroll! output-area :to :bottom))
+         (.append output-area (str "\n" (format-ffmpeg-output line))))
+        (recur rest)))
+    (.beep (Toolkit/getDefaultToolkit))
+    (show-dialog "ffmpegが終了しました" :info)
+    (set-form-state true)))
 
-(defn start-broadcast [_]
+(defn start-broadcast []
   (reset! settings (get-setting-form-data))
   (when (valid-form?)
     (when (= @peca-version "ST")
@@ -430,20 +474,20 @@
         (reset! channel-id (create-channel (get-form-data))))
       (reset! ffmpeg-process (.start (ProcessBuilder. command)))
       (reset! ffmpeg-writer (get-writer @ffmpeg-process))
-      (let [error (get-error-reader @ffmpeg-process)]
-        (future
-          (loop [s (.readLine error)]
-            (if s
-              (do (invoke-later
-                   (when (selection scroll-chbox)
-                     (scroll! output-area :to :bottom))
-                   (.append output-area (str "\n" (format-ffmpeg-output s))))
-                  (recur (.readLine error)))
-              (do
-                (.beep (Toolkit/getDefaultToolkit))
-                (show-dialog "ffmpegが終了しました" :info)
-                (set-form-state true))
-              )))))))
+      (launch-ffmpeg-reader (get-error-reader @ffmpeg-process))
+      ;; YTの時は10秒後にチャンネルIDを取得する。
+      (when (= @peca-version "YT")
+        (timer (fn [e]
+                 (reset! channel-id (get-channel-id-from-viewxml (get-form-data))))
+               :initial-delay 10000
+               :repeats? false)))))
+
+(defn stop-broadcast [_]
+  (when (= @peca-version "ST")
+    (stop-channel @channel-id))
+  (set-form-state true)
+  (.write @ffmpeg-writer "q")
+  (.flush @ffmpeg-writer))
 
 (load "core_component")
 
@@ -454,3 +498,5 @@
   (-> main-window pack! show!))
 
 (when debug (-main))
+
+

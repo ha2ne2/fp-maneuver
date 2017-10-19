@@ -1,64 +1,71 @@
-FPManeuver v1.2.1
 
-�z�M�J�n�{�^�����������Ŕz�M���n�߂���c�[���ł��B
-�s�A�L���X�g����`�����l���𗧂Ă�K�v������܂���B
-�\��n���񂪊J�����Ă���PeerCast YT�̋@�\���g���Ă��܂��B
-H265/MKV�z�M�ɂ��Ή��I
+FPManeuver v1.4.0
 
-�K�v�\�t�g
-�EPeerCast YT <https://github.com/plonk/peercast-yt>
-�@�n�c�l�c�T�[�o���g���ꍇ�͕s�v�ł��B
-�EFFmpeg      <https://ffmpeg.org/>
-�@�����ł�DL�����ꍇ�͒ǉ�DL�s�v�ł��B
-�EJava        <https://www.java.com/ja/>
-�@�K�v�ł��B
+配信開始ボタン押すだけで配信が始められるツールです。
+ピアキャストからチャンネルを立てる必要がありません。
+PeerCast Station と PeerCast YT に対応。
+Windows、Mac、Linuxで動きます。
+H265/MKV配信も出来ます。
 
-�g����
-fp-maneuver.jar���_�u���N���b�N�ŋN���B
-�ݒ�^�u���J���Ċ�{�ݒ������B
-host�A�`�����l�����A�W������������͂��A�z�M�J�n�{�^���������B
-������Ȃ������蓮���Ȃ������肵���畷���ĉ������B
+必要ソフト
+・Java <https://www.java.com/ja/>
+・SCFF(画面取り込みソフト) <https://github.com/Alalf/SCFF-DirectShow-Filter>
 
-peercast host�̏��ɂ�PeerCast YT�̓����Ă���z�X�gURL�����ĉ������B
-����http://ha2ne2.tokyo:7144���J�����Ă���̂Ŏg���Ă�����č\���܂���B
-�iYP�ɂ�TP�𗘗p�����Ė���Ă��܂��̂ŁA�W���������̑O��tp�ƕt���ĉ������B
-�@�Ⴆ�΃W���������u�Q�[���v�������ꍇ�́utp�Q�[���v�Ƃ��ĉ������B�j
-������Ȃ������������畷���ĉ������B
+使い方
+fp-maneuver.jarをダブルクリックで起動します。
+初回起動時は基本設定タブを開いてオーディオデバイスとビデオデバイスを指定して下さい。
+あとはチャンネル名などを入力して配信開始を押して下さい。
+分からない事があったら聞いて下さい。
 
-���������@�A����@��������
+■■■■　連絡先　■■■■
 
-�n�c�l�c�G���A - ������Όf����
-http://jbbs.shitaraba.net/internet/17144/
+ハツネツエリア - したらば掲示板
+http://jbbs.shitaraba.net/computer/44643/
 
-�n�c�l�c - twitter
+ハツネツ - twitter
 http://twitter.com/hatsunetsu7
 
 
-�������� Release NOTE ��������
+■■■■ Release NOTE ■■■■
 
-v1.2.1 Release 2017/05/22
-�Eaq-strength�̒l�����0�Ƃ��Ĉ����Ă����̂��C��
+v1.4.0 Release 2017/10/19
+・配信中に詳細の変更が出来るようになりました。
+　配信中に変更したい項目をクリックすると編集可能になります。
+　編集が終わったら、詳細変更ボタンをクリックして下さい。
+
+v1.3.1 Release 2017/08/12
+・NVENCハードウェアエンコーダを使ったH264/H265配信を出来るようにした。
+　H264はGeForce600番台以降、H265はGeForce900番台以降で使えます。
+　GPUでエンコードをする事でCPU使用率が劇的に下がります。
+　画質はCPUでエンコードするより多少下がりますが、
+　その分ビットレートを上げれば補えます。
+　presetはfast/medium/slowの3つが選べます。
+・ffmpeg-argsを手動変更した時にバグるバグを修正
+
+v1.3.0 Release 2017/08/11
+・PeerCast Stationに対応した
+・Linuxでビデオ/音声デバイスの指定がGUIから出来るようになりました(by Yoteichi)
 
 v1.2.0 Release 2017/05/17
-�E�G���R�ݒ�^�u��t���āAFFmpeg�I�v�V�������蓮�ŕύX�ł���悤�ɂ���
-�ELinux�Ŕz�M�o����悤�ɂ���
-�@video-device�ɂ�x11grab�Aauido-device�ɂ�
-  $ pactl list sources | grep -E '(Name|���O):'
-  �Ŏ擾�ł���f�o�C�X�����w�肵�ĉ������B
-�Eaq-strength�̐ݒ�t�H�[����t����
-�@�t���[�����ł̃r�b�g�Ĕz���̋����ݒ肷��l�ł��B�f�t�H���g��1�B
-�@�A�j���n�͒Ⴍ(0.8���x)�A���ʌn�AFPS�A�V���[�e�B���O�Q�[������
-�@����(1.3���x)�ݒ肷��Ɨǂ��悤�ł��B�v���O���~���O�z�M�͍�����
-�@���掿���ǂ������ł��B
-�EH264/FLV�z�M�Ƀ��^�r�b�g���[�g�l���ڂ���悤�ɂ���
-�E�������d�����ĕۑ������ꍇ���������̂��C��
+・エンコ設定タブからFFmpegオプションを手動で変更できるようにした
+・Linuxで配信出来るようにした
+　video-deviceにはx11grab、auido-deviceには
+  $ pactl list sources | grep -E '(Name|名前):'
+  で取得できるデバイス名を指定して下さい。
+・aq-strengthの設定フォームを付けた
+　フレーム内でのビット再配分の強弱を設定する値です。デフォルトは1。
+　アニメ系は低く(0.8程度)、実写系、FPS、シューティングゲーム等は
+　高く(1.3程度)設定すると良いようです。
+　プログラミング配信は高い方が画質が良かったです。
+・H264/FLV配信にメタビットレート値を載せるようにした
+・履歴が重複して保存される場合があったのを修正
 
 v1.1.0 Release 2017/04/30
-�E�ݒ�^�u��t����
-�EH264/FLV�Ŕz�M�o����悤�ɂ���
-�E�I�[�f�B�I��MP3,AAC,Opus����I�ׂ�悤�ɂ���
-�E�G���R�[�_�̏����̏d����I�ׂ�悤�ɂ����B�掿�Əd���̓g���[�h�I�t�ł�
+・設定タブを付けた
+・H264/FLVで配信出来るようにした
+・オーディオをMP3,AAC,Opusから選べるようにした
+・エンコーダの処理の重さを選べるようにした。画質と重さはトレードオフです
 
 v1.0.0 Release 2017/04/26
-�����o�[�W����
+初期バージョン
 
