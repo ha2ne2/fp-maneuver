@@ -10,6 +10,11 @@
               :listen  [:document eval-ffmpeg-args])
     (.setWrapStyleWord false)))
 
+(def relay-tree-area
+  (doto (text :multi-line? true :wrap-lines? true :rows 5
+              :editable? false)
+    (.setWrapStyleWord false))) ; ← word tanni orikaesi sinai
+
 (def setting-forms
   (into {}
         (map #(vector %1 (text (or (@settings %1) "")))
@@ -150,18 +155,37 @@
             ["詳細:"]          [(forms :desc)]
             ["コメント:"]      [(forms :comment)]
             ["コンタクトURL:"] [(forms :url)]
-            ["解像度:"]        [(forms :size)]
-            ["FPS:"]           [(forms :fps)]
-            ["codec:" ]        [vcodec-cmbox]
-            ["プリセット:"]    [preset-cmbox]
-            ["video bitrate(kbps):" ] [(forms :vbps)]
-            ;; ["audio codec:" ] [acodec-cmbox]
-            ["audio bitrate(kbps):"]  [(forms :abps)]
+            ;; ["解像度:"]        [(forms :size)]
+            ;; ["FPS:"]           [(forms :fps)]
+            ;; ["codec:" ]        [vcodec-cmbox]
+            ;; ["プリセット:"]    [preset-cmbox]
+            ;; ["video bitrate:" ] [(forms :vbps)]
+            ;; ;; ["audio codec:" ] [acodec-cmbox]
+            ;; ["audio bitrate:"]  [(forms :abps)]
+            [(seesaw.mig/mig-panel
+              :constraints["wrap 4"
+                           "[shrink 0]10px[]"
+                           "[shrink 0]5px[]"]
+              :items [["解像度:"] [(forms :size) "grow"]
+                      ["FPS:"]    [(forms :fps)  "grow"]
+                      ["codec:" ] [vcodec-cmbox  "grow"]
+                      ["preset:"] [preset-cmbox  "grow"]
+                      ["video kbps:"]  [(forms :vbps) "grow"]
+                      ["audio kbps:"]  [(forms :abps) "grow"]
+                      ]) "span,grow"]
             ["録画しますか？:"  ]     [record-chbox]
+
             [""] [button-panel]])
    :center (JScrollPane. output-area)
    ))
 
+(def status-panel
+  (seesaw.mig/mig-panel
+   :constraints ["wrap 2,fill"
+                 "[shrink 0]20px[]"
+                 "[shrink 0]"]
+   :items [["RELAY TREE:" "top"] [(scrollable relay-tree-area)"grow"]]))
+   
 (def setting-panel
   (seesaw.mig/mig-panel
     :constraints ["wrap 3"
@@ -185,7 +209,7 @@
            ["ffmpeg-args:"] [(scrollable (forms :ffmpeg-args))]
            ["evaluated:"] [(scrollable evaluated-args)]
            [""] [(horizontal-panel
-                  :items [(button :text "再読込"
+                  :items [(button :text "設定ファイルを再読込"
                                   :listen [:action
                                            (fn [e]
                                              (my-set :ffmpeg-args
@@ -193,7 +217,7 @@
                                                        (:ffmpeg-args (@history
                                                                       (.getSelectedIndex history-cmbox)))
                                                        ffmpeg-args)))])
-                          (button :text "初期化"
+                          (button :text "初期値を設定"
                                   :listen [:action
                                            (fn [e] (my-set :ffmpeg-args ffmpeg-args))])])]]))
 (def main-window
@@ -202,6 +226,7 @@
                          :placement :top
                          :overflow  :wrap
                          :tabs [{:title "配信" :content main-panel}
+                                {:title "配信状況" :content status-panel}
                                 {:title "基本設定" :content setting-panel}
                                 {:title "エンコ設定" :content encoder-setting-panel}
                                 ]))
@@ -217,12 +242,13 @@
                (fn [e]
                  (when (not (and (config start-button :enabled?)
                                  (= (config start-button :text) "配信開始")))
-                   (config! (.getSource e) :enabled? true)
+                   (mapc (fn [key] (config! (forms key) :enabled? true))
+                         [:genre :desc :comment :url])
                    (request-focus! (.getSource e))
                    (config! start-button
                             :text "詳細変更"
                             :enabled? true))))
-      [:cname :genre :desc :comment :url])
+      [:genre :desc :comment :url])
 
 
 

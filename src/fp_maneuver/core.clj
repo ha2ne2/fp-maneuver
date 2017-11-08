@@ -15,9 +15,9 @@
   (:use seesaw.core)
   (:require seesaw.mig
             seesaw.chooser
-            clojure.pprint
+            [clojure.pprint :refer [cl-format]]
             [clojure.xml :as xml]
-            [clojure.string :refer [starts-with? replace]]
+            [clojure.string :refer [starts-with?]]
             [environ.core :refer [env]]
             [clojure.data.json :as json]
             [clj-http.client :as client]))
@@ -35,6 +35,7 @@
  start-button stop-button button-panel
  main-panel setting-panel main-window
  history settings aq-strength-spinner
+ relay-tree-area
  scroll-chbox evaluated-args)
 
 ;; uberjarにするとpropertyが脱落するのでコンパイルタイムに定数化しておく
@@ -161,14 +162,16 @@
                   (dissoc chinfo :ffmpeg-args)
                   chinfo)
                 items)
-        tmp ((juxt :cname :genre :desc) chinfo)
-        new-history (into [chinfo] (filter #(not= tmp ((juxt :cname :genre :desc) %1)) @history))]
+        abbrev ((juxt :cname :genre :desc) chinfo)
+        new-history (into [chinfo]
+                          (filter #(not= abbrev ((juxt :cname :genre :desc) %1))
+                                  @history))]
     (spit
      "history.clj"
      (str (clojure.pprint/write new-history :stream nil) "\r\n\r\n"))
     (reset! history new-history)
     (.removeAllItems history-cmbox)
-    (dorun (map #(.addItem history-cmbox %1) (map history-to-str-vec @history)))))
+    (mapc #(.addItem history-cmbox %1) (map history-to-str-vec @history))))
 
 (def history (atom (read-history)))
 
@@ -340,16 +343,18 @@
 ;;  {:body "{\"jsonrpc\":\"2.0\",\"id\":254,\"method\":\"hoge\",\"params\":\"hoge2\"}",
 ;;   :headers {"X-Requested-With" "XMLRequest"}, :content-type :json, :accept :json})
 (defn post [method params]
-  (client/post (str (my-get :host) "/api/1") ; hostが/で終わっていてもいなくても通る
-               {:body (json/write-str
-                       ;; paramsがある時は追加
-                       ((if params #(assoc %1 :params params) identity)
+  ((comp #(% "result") json/read-str :body)
+   (client/post (str (my-get :host) "/api/1") ; hostが/で終わっていてもいなくても通る
+                {:body (json/write-str
+                        ;; paramsがある時は追加
+                        ((if params #(assoc %1 :params params) identity)
                          {:jsonrpc "2.0"
                           :id (rand-int 1000)
                           :method method}))
-                :headers {"X-Requested-With" "XMLRequest"}
-                :content-type :json
-                :accept :json}))
+                 :headers {"X-Requested-With" "XMLRequest"}
+                 :content-type :json
+                 :accept :json})))
+
 
 ;; (get-channel-id-from-viewxml (get-form-data))
 ;; => "E71C9E8787887CC1F99E3F0C78272942"
@@ -364,8 +369,7 @@
 ;; (get-yellow-pages) ;=> {"TP" 1119160141, "SP" 903724922}
 ;; 例外対策いるかなぁまぁいいか
 (defn get-yellow-pages []
-  (let [raw (post "getYellowPages" nil)
-        result ((json/read-str (raw :body)) "result")]
+  (let [result (post "getYellowPages" nil)]
     (reduce (fn [acc yp] (assoc acc (yp "name") (yp "yellowPageId")))
           {"掲載しない" nil} result)))
 
@@ -373,9 +377,9 @@
 ;; (get-peca-version) ;=> "ST" || "YT" || "Unknown host"
 (defn get-peca-version []
   (try
-    (let [raw (post "getVersionInfo" nil)
-          result (((json/read-str (raw :body)) "result") "agentName")]
-      (if (starts-with? result "PeerCastStation")
+    (let [result (post "getVersionInfo" nil)
+          agent (result "agentName")]
+      (if (starts-with? agent "PeerCastStation")
         "ST"
         "YT"))
     (catch clojure.lang.ExceptionInfo e
@@ -387,34 +391,31 @@
 ;; (create-channel (get-form-data))
 ;; return: channelID
 (defn create-channel [chinfo]
-  (let [raw (post "broadcastChannel"
-                   {:yellowPageId (@yellow-pages (my-get :yp))
-                    :sourceUri @http-push-server
-                    :sourceStream "HTTP Push Source"
-                    :contentReader (if (starts-with? (chinfo :vcodec) "H265")
-                                     "Matroska (MKV or WebM)" "Flash Video (FLV)")
-                    :info (assoc
-                           (zipmap [:name :genre :desc :comment :url]
-                                   (gets chinfo [:cname :genre :desc :comment :url]))
-                           :bitrate (+ (my-get :vbps) (my-get :abps)))
-                    :track {} ;; <- ないと弾かれる
-                    })
-        result ((json/read-str (raw :body)) "result")]
-    result))
+  (post "broadcastChannel"
+        {:yellowPageId (@yellow-pages (my-get :yp))
+         :sourceUri @http-push-server
+         :sourceStream "HTTP Push Source"
+         :contentReader (if (starts-with? (chinfo :vcodec) "H265")
+                          "Matroska (MKV or WebM)" "Flash Video (FLV)")
+         :info (assoc
+                (zipmap [:name :genre :desc :comment :url]
+                        (gets chinfo [:cname :genre :desc :comment :url]))
+                :bitrate (+ (my-get :vbps) (my-get :abps)))
+         :track {} ;; <- ないと弾かれる
+         }))
 
 ;; STOP成功時: null, 失敗時: Channel not found || Invalid channelId
 (defn stop-channel [channel-id]
-  (let [raw (post "stopChannel" {:channelId channel-id})]
-    raw))
+  (post "stopChannel" {:channelId channel-id}))
 
 (defn set-channel-info [channel-id chinfo]
-  (let [raw (post "setChannelInfo"
-                  {:channelId channel-id
-                   :info (zipmap [:name :genre :desc :comment :url]
-                                 (gets chinfo [:cname :genre :desc :comment :url]))
-                   :track {:url "" :name "" :creator "" :album "" :genre ""}
-                   })]
-    (println raw)))
+  (post "setChannelInfo"
+        {:channelId channel-id
+         :info (zipmap [:name :genre :desc :comment :url]
+                       (gets chinfo [:cname :genre :desc :comment :url]))
+         :track {:url "" :name "" :creator "" :album "" :genre ""}
+         })
+  (write-history))
 
 (def prev-start (atom (System/currentTimeMillis)))
 
@@ -445,6 +446,110 @@
             (when (not= pecav @peca-version)
               (reset! peca-version pecav))))))))
 
+;; (def orig
+;;   [{"isDirectFull" true, "localDirects" 1, "isReceiving" true, "sessionId" "00263C1896E116B549C82ABCA33B990C", "isTracker" false, "isRelayFull" false,
+;;     "address" "157.7.0.0", "port" 7144, "isControlFull" false, "isFirewalled" false, "version" 1218, "localRelays" 5
+;;     "children" [{"isDirectFull" true, "localDirects" 1, "isReceiving" true, "children" [], "sessionId" "005CDAB7E58655ACD27E6D70BAF743F8", "isTracker" false, "isRelayFull" false, "address" "58.98.0.0", "port" 7144, "isControlFull" false, "isFirewalled" false, "version" 1218, "localRelays" 0}
+;;                 {"isDirectFull" false, "localDirects" 0, "isReceiving" true, "children" [], "sessionId" "884E26A1320F4E2083BB385EEFB4F7BD", "isTracker" false, "isRelayFull" false, "address" "223.218.0.0", "port" 7144, "isControlFull" true, "isFirewalled" false, "version" 1218, "localRelays" 0}
+;;                 {"isDirectFull" false, "localDirects" 1, "isReceiving" true, "children" [], "sessionId" "EB3E68FB1FF04188969321B5A6D4BFA2", "isTracker" false, "isRelayFull" false, "address" "106.163.0.0", "port" 7150, "isControlFull" true, "isFirewalled" false, "version" 1218, "localRelays" 0}
+;;                 {"isDirectFull" false, "localDirects" 1, "isReceiving" true, "sessionId" "113386DC387947C8A6BFC302E09DDB52", "isTracker" false, "isRelayFull" false, "address" "183.77.0.0", "port" 7144, "isControlFull" true, "isFirewalled" false, "version" 1218, "localRelays" 1, "children"
+;;                  [{"isDirectFull" true, "localDirects" 1, "isReceiving" true, "children" [], "sessionId" "00B300778750642BF405DCE881F17A15", "isTracker" false, "isRelayFull" false, "address" "118.19.0.0", "port" 0, "isControlFull" false, "isFirewalled" true, "version" 1218, "localRelays" 0}]}
+;;                 {"isDirectFull" false, "localDirects" 1, "isReceiving" true, "children" [], "sessionId" "00A354C5A4A5E3193AD4DB0FB8EEE44B", "isTracker" false, "isRelayFull" false, "address" "106.160.0.0", "port" 7144, "isControlFull" false, "isFirewalled" false, "version" 1218, "localRelays" 0}],
+;;     }])
+
+;; ↑を↓みたいに変換する関数たち。
+
+;; 157.0.0.0 (9/8)
+;; ├ 106.163.0.0 (1/0)      false
+;; ├ 183. 77.0.0 (7/5)      false
+;; │ ├ 183.177.0.0 (2/1)    false false
+;; │ │ └ 123.0.0.0 (1/0)    false false true
+;; │ └ 123.0.0.0   (4/2)    false true
+;; │   ├ 123.0.0.0 (1/0)    false true false
+;; │   └ 123.0.0.0 (2/1)    false true true
+;; │     └ 123.0.0.0 (1/0)  false true true true
+;; └ 106.160.0.0 (0) (2/1)  true
+;;    └ 123.0.0.0    (1/0)  true true
+
+;; JSON TO RELAY TREE ALGORITHM
+;; 1.HOP数nの時n-1本│を出力。 ただしHOP数kの先祖が最終要素の時は|の代わりに空文字列を出力
+;; 2. ├を出力。ただし自分が最終要素の時は├の代わりに└を出力。
+;; きれいに書けたｗ
+
+(defn traverse [[x & xs :as nodes] key-fn get-childs-fn]
+  (letfn [(rec [[x & xs :as nodes] last-node?-hist acc]
+            (if (empty? nodes)
+              acc
+              (let [childs (get-childs-fn x)
+                    acc (conj acc (key-fn x (conj last-node?-hist (empty? xs))))]
+                (if (empty? childs)
+                  (rec xs last-node?-hist acc)
+                  (rec xs last-node?-hist
+                       (rec childs
+                            (conj last-node?-hist (empty? xs)) acc))))))]
+    (rec nodes [] [])))
+
+
+(defn add-globalDirects-globalRelays-to-tree [tree] ;; -> new-tree
+  (when tree
+    (let [childs (tree "children")
+          new-childs (map add-globalDirects-globalRelays-to-tree childs)
+          local [(tree "localDirects") (tree "localRelays")]
+          [directs relays] (if (empty? childs) local
+                               (reduce (fn [[d r] [d1 r1]] [(+ d d1) (+ r r1)])
+                                       local
+                                       (map #(gets % ["globalDirects" "globalRelays"]) new-childs)))]
+      (assoc tree
+             "globalDirects" directs
+             "globalRelays" relays
+             "children" new-childs))))
+
+
+(defn relay-tree-to-string [tree]
+  (#(reduce str %)
+   (traverse
+    [(add-globalDirects-globalRelays-to-tree tree)]
+    (fn [node [_ & last-node?-hist]]
+      (cl-format nil "~{~A~}~A ~{~A (~A/~A) ~A~}~%"
+                 (when (not (empty? last-node?-hist))
+                   (conj (mapv #(if % "  " "│") (butlast last-node?-hist))
+                         (if (last last-node?-hist) "└" "├")))
+                 (if (get node "isFirewalled") "×"
+                     (if (get node "isRelayFull") "満" "空"))
+                 (gets node ["address" "globalDirects" "localRelays" "versionEX"])))
+    #(get % "children"))))
+
+;;;;; sample
+;; ((comp print relay-tree-to-string first)
+;;  (post "getChannelRelayTree" {:channelId "E71C9E8787887CC1F99E3F0C78272942"}))
+;; 157.7.223.170 (8/7) 1218
+;;  ├ 58.98.194.227 (1/0) 1218
+;;  ├ 182.170.125.202 (1/0) 1218
+;;  ├ 180.42.8.42 (1/0) 1218
+;;  ├ 49.212.151.50 (1/0) 1218
+;;  ├ 103.2.250.153 (1/0) 1218
+;;  └ 106.160.185.185 (2/1) 1218
+;;     └ 42.150.23.47 (1/0) 1218
+
+;; ↓実行可能サンプル
+;; (print (relay-tree-to-string
+;; '{"isDirectFull" true, "localDirects" 1, "isReceiving" true, "versionEx" "YT25",, "sessionId" "00E5ED0EA5EAF37CBCFF9ACF44E5212F", "isTracker" false, "isRelayFull" false, "address" "157.7.223.170", "port" 7144, "isControlFull" false, "isFirewalled" false, "version" 1218, "localRelays" 3
+;;   "children" [{"isDirectFull" true, "localDirects" 1, "isReceiving" true, "versionEx" "VP27",
+;;                "children" [{"isDirectFull" false, "localDirects" 1, "isReceiving" true, "versionEx" "ST221",
+;;                             "children" [], "sessionId" "9810F912C44044808E878AE8D065C455", "isTracker" false, "isRelayFull" false, "address" "218.110.89.69", "port" 7144, "isControlFull" true, "isFirewalled" false, "version" 1218, "localRelays" 0}], "sessionId" "005CDAB7E58655ACD27E6D70BAF743F8", "isTracker" false, "isRelayFull" true, "address" "58.98.194.227", "port" 7144, "isControlFull" false, "isFirewalled" false, "version" 1218, "localRelays" 1}
+;;               {"isDirectFull" false, "localDirects" 1, "isReceiving" true, "versionEx" "ST221",
+;;                "children" [{"isDirectFull" false, "localDirects" 1, "isReceiving" true, "versionEx" "ST239",
+;;                             "children" [], "sessionId" "BA1B3A4D0C424F96811124F3F998A929", "isTracker" false, "isRelayFull" false, "address" "103.2.250.153", "port" 7144, "isControlFull" true, "isFirewalled" true, "version" 1218, "localRelays" 0}], "sessionId" "0B88CF26989E4137BE6B5FCFA18EE4E5", "isTracker" false, "isRelayFull" false, "address" "42.150.23.47", "port" 7144, "isControlFull" true, "isFirewalled" false, "version" 1218, "localRelays" 1}
+;;               {"isDirectFull" false, "localDirects" 0, "isReceiving" true, "versionEx" "IM50",
+;;                "children" [{"isDirectFull" false, "localDirects" 1, "isReceiving" true, "versionEx" "ST221",
+;;                             "children" [{"isDirectFull" false, "localDirects" 0, "isReceiving" true, "versionEx" "ST221", "children" [{"isDirectFull" false, "localDirects" 1, "isReceiving" true, "versionEx" "ST239", "children" [], "sessionId" "E7FB96E1F542428AA06E1D549052349A", "isTracker" false, "isRelayFull" false, "address" "183.77.167.226", "port" 7144, "isControlFull" true, "isFirewalled" false, "version" 1218, "localRelays" 0}], "sessionId" "16889772F2AA47BABAF5ACDE4E854C27", "isTracker" false, "isRelayFull" false, "address" "180.23.129.181", "port" 7147, "isControlFull" true, "isFirewalled" false, "version" 1218, "localRelays" 1}], "sessionId" "7BBD6C0B0A7D43B085BAC51C72F7728E", "isTracker" false, "isRelayFull" false, "address" "58.92.244.140", "port" 7147, "isControlFull" true, "isFirewalled" false, "version" 1218, "localRelays" 1}], "sessionId" "00A354C5A4A5E3193AD4DB0FB8EEE44B", "isTracker" false, "isRelayFull" false, "address" "106.160.185.185", "port" 7144, "isControlFull" false, "isFirewalled" false, "version" 1218, "localRelays" 1}]}))
+
+;;;; sample
+;; (#(print (reduce str (interpose "\n" %)))
+;;  (tree-traverse '(0 1 2 (3 4 (5)) nil ((6) 7 (8 9 10)))
+;;                 (fn [x last-node?-hist] (str (repeat-str "  " (count last-node?-hist)) x))
+;;                 #(if (coll? %) % [])))
+
 (defn launch-ffmpeg-reader [reader]
   (future
     (loop [[line & rest] (line-seq reader)]
@@ -458,11 +563,35 @@
     (show-dialog "ffmpegが終了しました" :info)
     (set-form-state true)))
 
+
+;; (reset! channel-id "E71C9E8787887CC1F99E3F0C78272942")
+;; (.isRunning reload-relay-tree-timer)
+;; (.start reload-relay-tree-timer)
+;; (.start reload-relay-tree-timer)
+
+(def reload-relay-tree-timer
+  (timer
+   (fn [e]
+     (text! relay-tree-area
+      (relay-tree-to-string
+       (first (post "getChannelRelayTree" {:channelId @channel-id})))))
+   :initial-delay 15000
+   :delay 10000
+   :start? nil))
+  
+(defn get-host-without-port [s]
+  (let [result (re-find #"(^.*:.*):" s)]
+    (if (not result)
+      (throw (new Exception (<< "Invalid Host String ~{s}")))
+      (second result))))
+
 (defn start-broadcast []
   (reset! settings (get-setting-form-data))
   (when (valid-form?)
     (when (= @peca-version "ST")
-      (reset! http-push-server (str localhost ":" (+ (rand-int 16384) 49152))))
+      (reset!
+       http-push-server
+       (str (get-host-without-port (:host (get-form-data))) ":7155")))
     (let [command (gen-command (get-form-data))]
       (invoke-later
        (.append output-area (str "> " (reduce str command) "\n\n"))
@@ -477,17 +606,19 @@
       (launch-ffmpeg-reader (get-error-reader @ffmpeg-process))
       ;; YTの時は10秒後にチャンネルIDを取得する。
       (when (= @peca-version "YT")
-        (timer (fn [e]
-                 (reset! channel-id (get-channel-id-from-viewxml (get-form-data))))
-               :initial-delay 10000
-               :repeats? false)))))
+        (future
+          (Thread/sleep 10000)
+          (reset! channel-id (get-channel-id-from-viewxml (get-form-data)))))
+      (.start reload-relay-tree-timer)
+      )))
 
 (defn stop-broadcast [_]
   (when (= @peca-version "ST")
     (stop-channel @channel-id))
   (set-form-state true)
   (.write @ffmpeg-writer "q")
-  (.flush @ffmpeg-writer))
+  (.flush @ffmpeg-writer)
+  (.stop reload-relay-tree-timer))
 
 (load "core_component")
 
@@ -498,5 +629,10 @@
   (-> main-window pack! show!))
 
 (when debug (-main))
+
+
+
+
+
 
 

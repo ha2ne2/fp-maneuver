@@ -10,9 +10,48 @@
 ;;       (println line)
 ;;       (recur rest))))
 
+
+;; 気持ちがいい。
+;; (flatten '(0 1 2 (3 4 (5)) nil ((6) 7 (8 9 10))) [])
+;; [0 1 2 3 4 5 nil 6 7 8 9 10]
+;; (defn flatten [[x & xs :as lst] acc]
+;;   (if (empty? lst)
+;;     acc
+;;     (if (coll? x)
+;;       (flatten xs (flatten x acc))
+;;       (flatten xs (conj acc x)))))
+
+;;;; 404 Blog Not Found:アルゴリズム - 同じ文字列のn回繰り返しをlog n回で作る方法
+;;;; http://blog.livedoor.jp/dankogai/archives/51172176.html
+;; (repeat-str "hoge " 3)
+;;=> "hoge hoge hoge "
+(defn repeat-str [s n]
+  (loop [s s n n result ""]
+    (if (> n 0)
+      (recur (str s s)
+             (unsigned-bit-shift-right n 1)
+             (if (= (bit-and n 1) 1) (str result s) result))
+      result)))
+
+;; (defn hutuu [s n]
+;;   (loop [i 0 result ""]
+;;     (if (< i n)
+;;       (recur (inc i) (str result s))
+;;       result)))
+
+;; user=> (time (do (hutuu "hoge " 10000) nil))
+;; "Elapsed time: 160.940877 msecs"
+;; nil
+;; user=> (time (do (repeat-str "hoge " 10000) nil))
+;; "Elapsed time: 0.192901 msecs"
+;; nil
+;; user=> (= (hutuu "hoge " 10000) (repeat-str "hoge " 10000))
+;; true
+
+
 ;; (gets {:hoge "ほげ", :asdf "asdf"} [:hoge :asdf])
 ;; ;=> ("ほげ" "asdf")
-(defn gets [m keys] (map m keys))
+(defn gets [m keys] (map #(get m %) keys))
 ;(def gets map)
 
 ;; (mapc print '(1 2 3 4)) ;=> '(1 2 3 4)
@@ -56,9 +95,10 @@
 ;; (file-name-encode "hogehoge/:*?\"<>|hoge.mkv")
 ;;=>"hogehoge／：＊？”＜＞｜hoge.mkv"
 (defn file-name-encode [s]
-  (replace s #"[\/\:\*\?\"\<\>\|]"
-           (zipmap (map str "/:*?\"<>|")
-                   (map str "／：＊？”＜＞｜"))))
+  (clojure.string/replace
+   s #"[\/\:\*\?\"\<\>\|]"
+   (zipmap (map str "/:*?\"<>|")
+           (map str "／：＊？”＜＞｜"))))
 
 (defn force-array-map [m keys]
   (apply array-map (flatten (map #(vector %1 (%1 m)) keys))))
